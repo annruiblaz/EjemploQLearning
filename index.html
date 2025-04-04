@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ejemplo Q-Learning</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+</head>
+<body>
+    <h2>Q-Learning con Tensorflow.js</h2>
+    <h4>🔎 Revisa la consola</h4>
+
+    <script>
+        //variables con los valores del entorno
+        const tamanoCuadricula = 4; //tamaño del tablero, sera una cuadricula de 4x4
+        const numEstados = tamanoCuadricula * tamanoCuadricula; //el num total de estados es 16, ya que la cuadricula es de 4x4
+        const numAcciones = 4; //el agente puede tomar 4 acciones: arriba, abajo, izquierda y derecha
+
+        //recompensas asignadas a cada estado del entorno
+        const recompensas = [
+            -1, -1, -1, -1, //estados en la 1ª fila (ninguna recompensa positiva)
+            -1, -1, -1, -1, //estados en la 2ª fila (ninguna recompensa positiva)
+            -1, -1, -1, -1, //estados en la 3ª fila (ninguna recompensa positiva)
+            10, -1, -1, -10 //estados en la ult fila 10 recompensa en la meta y -10 para la "muerte"
+        ];
+
+        /*
+            Acciones
+            0 -> arriba
+            1 -> abajo
+            2 -> izquierda
+            3 -> derecha
+        */
+
+        //inicializamos la tabla Q con ceros (representando las expectativas d recompensa)
+        let tablaQ = tf.zeros([numEstados, numAcciones]);
+        //printeamos x consola la tabla
+        console.log('Tabla Q inicial: ');
+        tablaQ.print();
+
+        //parametros para el aprendizaje
+        const tasaAprendizaje = 0.05; //cuanto se ajustan los valores de la tablaQ en cada iteracion
+        const descuento = 0.9; //factor d descuento q controla la importancia q da a las futuras recompensas
+        const epsilon = 0.05; //probabilidad d tomar una accion aleatoria (exploracion) en lugar d seguir la mejor accion (explotacion)
+        const numEpisodios = 10000; //num total d episodios d entrenamiento para el agente
+
+        //funcion para seleccionar una accion segun la estrategia epsilon-greedy
+        function seleccionarAccion(estado) {
+            if(Math.random() < epsilon) {
+                //si se elige explorar (probabilidad epsilon) seleccionamos una accion aleatoria
+                return Math.floor(Math.random() * numAcciones) //generamos num entre 0 y 3
+            } else { //si no, se elige la accion q tiene el mayor valor Q (explotacion)
+                //obtiene la acción con el mayor valor Q para ese estado
+                // tf.argMax encuentra el indice del valor max a lo largo del eje 1 (columnas), q es el eje xdefecto si no se especifica
+                return tf.argMax(
+                    tablaQ.slice(
+                        [estado, 0],
+                        [1, numAcciones]
+                    )
+                ).dataSync()[0];
+            }
+        }
+
+        /*
+            Acciones:
+            0 -> arriba
+            1 -> abajo
+            2 -> izquierda
+            3 -> derecha
+
+            estado: numero fila en la tablaQ
+            tamanoCuadricula: 4 columnas x fila
+            numEstados: 16 
+        */
+
+        //determina el siguiente estado dados un estado y una accion
+        function obtenerSiguienteEstado(estado, accion) {
+            //inicializamos el nuevo estado con el valor actual del estado
+            let nuevoEstado = estado;
+
+            //if accion === ir arriba && estado(fila en la tablaQ) es >= 4
+            //es decir: no estamos en la primera fila
+            if(accion === 0 && estado >= tamanoCuadricula) {
+                //mueve el agente hacia arriba en la cuadricula
+                nuevoEstado = estado - tamanoCuadricula;
+            } else if( accion === 1 && estado < numEstados - tamanoCuadricula) {
+                //si el num d fila en la tablaQ es menor q 16(filas totales) - 4
+                // no estamos en la ult fila
+                nuevoEstado = estado + tamanoCuadricula; //movemos el agente abajo
+            } else if( accion === 2 && estado % tamanoCuadricula > 0) {
+                nuevoEstado = estado - 1; //mueve a la izq
+            } else if( accion === 3 && estado % tamanoCuadricula < tamanoCuadricula -1) {
+                nuevoEstado = estado + 1; //mueve a la derecha
+            }
+
+            return nuevoEstado; //devolvemos el estado resultante d la accion tomada
+        }
+
+        //actualiza los valores d la tablaQ
+        function actualizarQ( estado, accion, recompensa, siguienteEstado) {
+            //tf.tidy() nos ayuda a gestionar la memoria (eliminando los tensores no utilizados dsps d cada operacion)
+            tf.tidy( () => {
+                //obtenemos el valor actual d la tablaQ en el estado y accion especificados
+                let Qactual = tablaQ.slice([estado, accion], [1, 1]).dataSync()[0];
+
+                //obtenemos el valor max de Q del siguiente estado
+                let maxQProximo = tf.max(tablaQ.slice([siguienteEstado, 0], [1, numAcciones])).dataSync()[0];
+
+                //verificamos q los valores no sean NaN
+                if(isNaN(Qactual) || isNaN(maxQProximo)) {
+                    console.error(`Error: Qactual: ${Qactual} o maxQProximo: ${maxQProximo} son Nan`);
+                    return;
+                }
+
+                //calculamos el nuevo valor para la tablaQ utilizando la ecuacion d actualizacion d Q-Learning
+                let nuevoValorQ = Qactual + tasaAprendizaje *(recompensa + descuento * maxQProximo - Qactual);
+
+                //verificamos q el nuevo valor no es Nan
+                if(isNaN(nuevoValorQ)) {
+                    console.error('Error: el nuevoValorQ es NaN');
+                    return;
+                }
+
+                //actualizamos la tablaQ utilizando un buffer sincronizado para acceder y modificar los valores 
+                // directamente en memoria y establecemos el nuevo valor calculado en la tabla!
+                tablaQ.bufferSync().set(nuevoValorQ, estado, accion);
+
+                //printeo de info
+                console.log(`Q actual ${tablaQ.slice([estado, accion], [1, 1]).dataSync()[0]}`);
+                console.log(`Max Q siguiente ${tf.max(tablaQ.slice([siguienteEstado, 0], [1, numAcciones])).dataSync()[0]}`);
+                console.log(`Estado ${estado}, Accion: ${accion}, Recompensa: ${recompensa}`);
+                console.log(`Siguiente estado ${siguienteEstado}`);
+                tablaQ.print();
+            });
+        }
+
+        //funcion principal del entrenamiento del agente
+        async function entrenarAgente() {
+            for(let episodio = 0; episodio < numEpisodios; episodio ++) {
+                //inicializamos un estado aleatorio dentro d la cuadricula
+                let estado = Math.floor(Math.random() * numEstados);
+                let terminado = false; //controla si el episodio ha terminado
+                let recompensaTotal = 0; //acumulador d recompensas durante el episodio
+
+                while(!terminado) {
+                    //seleccionamos una accion segun la politica epsilon-greedy
+                    const accion = seleccionarAccion(estado);
+                    //obtenemos el siguiente estado asociado a esa accion
+                    const siguienteEstado = obtenerSiguienteEstado(estado, accion);
+                    //obtenemos el siguiente estado y la recompensa obtenida x el siguiente estado
+                    const recompensa = recompensas[siguienteEstado];
+
+                    //actualizamos la tablaQ con la nueva exp obtenida
+                    actualizarQ(estado, accion, recompensa, siguienteEstado);
+
+                    //actualizamos el estado actual
+                    estado = siguienteEstado;
+                    recompensaTotal += recompensa; //sumamos la recompensa obtenida en este paso 
+                    console.log(`Estado ${estado}, Accion: ${accion}, Recompensa: ${recompensa}, RecompensaTotal: ${recompensaTotal}`);
+
+                    //termina el episodio si se alcanza la meta (recompensa = 10), o se cae en el agujero (recompensa = -10)
+                    //tmb finaliza si da muchos movimientos absurdos / q no llevan a nada (recompensaTotal < -100)
+                    if(recompensa === 10 || recompensa === -10 || recompensaTotal < -100) {
+                        terminado = true;
+                    }
+                }
+
+                console.log(`Episodio: ${episodio}, RecompensaTotal: ${recompensaTotal}`);
+            }
+        }
+
+        //comenzamos el entrenamiento del agente
+        entrenarAgente();
+
+    </script>
+</body>
+</html>
