@@ -42,7 +42,7 @@
         const tasaAprendizaje = 0.05; //cuanto se ajustan los valores de la tablaQ en cada iteracion
         const descuento = 0.9; //factor d descuento q controla la importancia q da a las futuras recompensas
         const epsilon = 0.05; //probabilidad d tomar una accion aleatoria (exploracion) en lugar d seguir la mejor accion (explotacion)
-        const numEpisodios = 10000; //num total d episodios d entrenamiento para el agente
+        const numEpisodios = 1500; //num total d episodios d entrenamiento para el agente
 
         //funcion para seleccionar una accion segun la estrategia epsilon-greedy
         function seleccionarAccion(estado) {
@@ -54,10 +54,10 @@
                 // tf.argMax encuentra el indice del valor max a lo largo del eje 1 (columnas), q es el eje xdefecto si no se especifica
                 return tf.argMax(
                     tablaQ.slice(
-                        [estado, 0],
-                        [1, numAcciones]
+                        [estado, 0],//punto d inicio del corte (comienza en la fila estado y la columna 0)
+                        [1, numAcciones] //tamaño del corte (toma 1 fila y todas las columnas correspondientes a las acciones)
                     )
-                ).dataSync()[0];
+                ).dataSync()[0];//convierte el tensor resultante (1d) a un arreglo d js (y extrae el 1º y unico valor)
             }
         }
 
@@ -165,9 +165,67 @@
                     }
                 }
 
-                console.log(`Episodio: ${episodio}, RecompensaTotal: ${recompensaTotal}`);
+                //mostramos la cuadricula al acabar cada episodio
+                mostrarTablero();
+                console.log(`Episodio: ${episodio + 1}, RecompensaTotal: ${recompensaTotal}`);
             }
         }
+
+        //funcion q crea la cuadricula en html
+        function crearTablero() {
+            const gridContainer = document.createElement('div');
+            gridContainer.style.display= 'grid';
+            gridContainer.style.gridTemplateColumns = `repeat(${tamanoCuadricula}, 50px)`;
+            gridContainer.style.gridTemplateRows = `repeat(${tamanoCuadricula}, 50px)`;
+            gridContainer.style.gap = '5px';
+
+            for(let i = 0; i < numEstados; i++) {
+                const celda = document.createElement('div');
+                celda.id = `estado-${i}`;
+                celda.style.width = '50px';
+                celda.style.height = '50px';
+                celda.style.border = '1px solid black';
+                celda.style.display = 'flex';
+                celda.style.alignItems = 'center';
+                celda.style.justifyContent = 'center';
+                celda.style.fontSize = '14px';
+                gridContainer.appendChild(celda);
+            }
+
+            document.body.appendChild(gridContainer);
+        }
+
+        //funcion q muestra la cuadricula actualizada con las acciones + valoradas
+        function mostrarTablero() {
+            for(let estado = 0; estado < numEstados; estado ++) {
+                // slice([punto d inicio del corte], [tamaño del corte]) 
+                const acciones = tablaQ.slice([estado, 0], [1, numAcciones]).dataSync();
+                //obtenemos el index d la accion con mayor valor Q
+                const mejorAccion = acciones.indexOf(Math.max(...acciones));
+                const celda = document.getElementById(`estado-${estado}`); //y la celda q le corresponde
+
+                let flecha = '';
+                switch(mejorAccion) {
+                    case 0:
+                        flecha = '⬆️';
+                        break;
+                    case 1:
+                        flecha = '⬇️';
+                        break;
+                    case 2:
+                        flecha = '⬅️';
+                        break;
+                    case 3:
+                        flecha = '➡️';
+                        break;
+                }
+
+                celda.textContent = flecha;
+            }
+        }
+
+        //creamos la tabla
+        crearTablero();
 
         //comenzamos el entrenamiento del agente
         entrenarAgente();
